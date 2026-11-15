@@ -1,0 +1,368 @@
+# Aula 08 – Atividade Prática | Computação em Nuvem
+
+## Verificações de Saúde no Kubernetes
+
+### Introdução
+
+Nesta atividade prática, trabalhamos com as verificações de saúde de um Pod no Kubernetes, utilizando o Nginx como exemplo.
+
+O objetivo foi entender como o Kubernetes verifica se uma aplicação está funcionando corretamente e se está pronta para receber acessos.
+
+Durante a atividade, utilizamos duas verificações chamadas Liveness Probe e Readiness Probe. Também realizamos alguns testes, criando e removendo um arquivo para observar como o estado do Pod mudava.
+
+A seguir, apresento os passos realizados e os resultados que obtive durante a prática.
+
+---
+
+## PASSO 1 – Verificando os Nodes e criando um Namespace
+
+**Comando utilizado:**
+
+```bash
+kubectl get nodes
+```
+
+**Resultado:**
+
+```text
+NAME           STATUS   ROLES           AGE   VERSION
+controlplane   Ready    control-plane   9d    v1.37.1
+node01         Ready    <none>          9d    v1.37.1
+```
+
+Em seguida, criamos o namespace:
+
+```bash
+kubectl create namespace aula8
+```
+
+**Resultado:**
+
+```text
+namespace/aula8 created
+```
+
+Para verificar se foi criado:
+
+```bash
+kubectl get namespace aula8
+```
+
+**Resultado:**
+
+```text
+NAME    STATUS   AGE
+aula8   Active   52s
+```
+
+**O que eu entendi:**
+
+Primeiro, verificamos se os Nodes estavam funcionando corretamente. Os dois apresentaram o status `Ready`.
+
+Depois, criamos o namespace `aula8`, que utilizamos para organizar e separar os recursos dessa atividade.
+
+---
+
+## PASSO 2 – Criando o arquivo web-saude.yaml
+
+**Comando utilizado:**
+
+```bash
+cat > web-saude.yaml <<'EOF'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web-saude
+  namespace: aula8
+spec:
+  containers:
+  - name: nginx
+    image: nginx:alpine
+    ports:
+    - containerPort: 80
+    livenessProbe:
+      httpGet: {path: /, port: 80}
+      initialDelaySeconds: 5
+      periodSeconds: 5
+    readinessProbe:
+      httpGet: {path: /health, port: 80}
+      initialDelaySeconds: 2
+      periodSeconds: 5
+EOF
+```
+
+**O que eu entendi:**
+
+Nessa etapa, criamos um arquivo chamado `web-saude.yaml`, que contém as configurações do Pod.
+
+Utilizamos a imagem `nginx:alpine` e configuramos duas verificações.
+
+A primeira foi a `livenessProbe`, que verifica se o Nginx continua funcionando, acessando o caminho `/`.
+
+A segunda foi a `readinessProbe`, que verifica se a aplicação está pronta para receber acessos, tentando acessar o caminho `/health`.
+
+Assim, conseguimos configurar duas verificações diferentes para acompanhar o funcionamento do Pod.
+
+---
+
+## PASSO 3 – Criando e verificando o Pod
+
+**Comando utilizado:**
+
+```bash
+kubectl apply -f web-saude.yaml
+```
+
+**Resultado:**
+
+```text
+pod/web-saude created
+```
+
+Depois, verificamos o Pod:
+
+```bash
+kubectl -n aula8 get pod web-saude
+```
+
+**Resultado:**
+
+```text
+NAME        READY   STATUS    RESTARTS   AGE
+web-saude   0/1     Running   0          53s
+```
+
+Em seguida, utilizamos o comando:
+
+```bash
+kubectl -n aula8 describe pod web-saude
+```
+
+**O que eu entendi:**
+
+Depois de aplicar o arquivo, o Pod foi criado corretamente e apareceu com o status `Running`.
+
+Porém, o campo `READY` estava mostrando `0/1`, indicando que o Pod ainda não estava pronto para receber acessos.
+
+Ao consultar os detalhes com `describe`, encontramos um aviso informando que a verificação de prontidão estava falhando porque o caminho `/health` retornava o código 404.
+
+Isso aconteceu porque ainda não existia um arquivo chamado `health` no diretório utilizado pelo Nginx.
+
+---
+
+## PASSO 4 – Analisando o resultado das verificações
+
+Durante a análise do Pod, observamos os seguintes resultados:
+
+- **Running:** o processo Nginx estava em execução.
+- **READY 0/1:** a verificação de prontidão estava falhando.
+- **RESTARTS 0:** o container não havia sido reiniciado, pois a verificação de funcionamento continuava respondendo corretamente.
+- **Evento encontrado:** `Readiness probe failed: HTTP probe failed with statuscode: 404`.
+
+**O que eu entendi:**
+
+Nessa etapa, conseguimos perceber que o Pod podia estar em execução, mas ainda não estar pronto para receber acessos.
+
+O Nginx estava funcionando normalmente pelo caminho `/`, mas a verificação feita em `/health` não conseguia encontrar o arquivo.
+
+Isso ajudou a entender melhor a diferença entre as duas verificações e a importância de acompanhar os resultados apresentados pelo Kubernetes.
+
+---
+
+## PASSO 5 – Criando o arquivo health
+
+**Comando utilizado:**
+
+```bash
+kubectl -n aula8 exec web-saude -- sh -c 'echo OK > /usr/share/nginx/html/health'
+```
+
+Depois, acompanhamos o Pod:
+
+```bash
+kubectl -n aula8 get pod web-saude -w
+```
+
+**Resultado:**
+
+```text
+NAME        READY   STATUS    RESTARTS   AGE
+web-saude   1/1     Running   0          4m11s
+```
+
+**O que eu entendi:**
+
+Como o problema estava relacionado à falta do arquivo `health`, criamos esse arquivo dentro da pasta utilizada pelo Nginx.
+
+Colocamos o conteúdo `OK` nele para que a verificação pudesse encontrar o caminho solicitado.
+
+Depois disso, acompanhamos o Pod e percebemos que o campo `READY` mudou de `0/1` para `1/1`.
+
+Isso mostrou que a verificação de prontidão começou a funcionar corretamente.
+
+---
+
+## PASSO 6 – Testando o acesso ao arquivo health
+
+**Comando utilizado:**
+
+```bash
+kubectl -n aula8 exec web-saude -- wget -qO- http://localhost/health
+```
+
+**Resultado:**
+
+```text
+OK
+```
+
+Depois, verificamos novamente o Pod:
+
+```bash
+kubectl -n aula8 get pod web-saude
+```
+
+**Resultado:**
+
+```text
+NAME        READY   STATUS    RESTARTS   AGE
+web-saude   1/1     Running   0          8m56s
+```
+
+**O que eu entendi:**
+
+Nessa etapa, utilizamos o comando `wget` para testar se o arquivo `health` estava sendo acessado corretamente.
+
+O resultado foi `OK`, confirmando que o arquivo estava disponível.
+
+Também verificamos novamente o Pod e ele continuava com o status `Running` e `READY 1/1`.
+
+---
+
+## PASSO 7 – Removendo o arquivo health
+
+**Comando utilizado:**
+
+```bash
+kubectl -n aula8 exec web-saude -- rm /usr/share/nginx/html/health
+```
+
+Depois, acompanhamos novamente o Pod:
+
+```bash
+kubectl -n aula8 get pod web-saude -w
+```
+
+**Resultado:**
+
+```text
+NAME        READY   STATUS    RESTARTS   AGE
+web-saude   1/1     Running   0          10m
+web-saude   0/1     Running   0          10m
+```
+
+**O que eu entendi:**
+
+Depois de confirmar que tudo estava funcionando, removemos o arquivo `health` para observar o que aconteceria com o Pod.
+
+Após a remoção, o campo `READY` mudou de `1/1` para `0/1`, enquanto o status continuou como `Running`.
+
+Isso aconteceu porque a verificação de prontidão não conseguiu mais encontrar o arquivo.
+
+Com esse teste, conseguimos observar que o Nginx continuava funcionando, mas o Pod deixou de ser considerado pronto para receber acessos.
+
+---
+
+## PASSO 8 – Testando o Nginx e verificando os logs
+
+Primeiro, realizamos um teste de acesso à página principal do Nginx:
+
+```bash
+kubectl -n aula8 exec web-saude -- wget -qO- http://localhost/ >/dev/null
+```
+
+Depois, consultamos os registros do Nginx:
+
+```bash
+kubectl -n aula8 logs web-saude --tail=20
+```
+
+**Resultado:**
+
+Nos logs, encontramos registros como:
+
+```text
+192.168.1.92 - - [15/Nov/2026:03:20:34 +0000] "GET /health HTTP/1.1" 404 153 "-" "kube-probe/1.37" "-"
+192.168.1.92 - - [15/Nov/2026:03:20:37 +0000] "GET / HTTP/1.1" 200 896 "-" "kube-probe/1.37" "-"
+2026/11/15 03:20:39 [error] 30#30: *292 open() "/usr/share/nginx/html/health" failed (2: No such file or directory), client: 192.168.1.92, server: localhost, request: "GET /health HTTP/1.1", host: "192.168.1.75:80"
+```
+
+**O que eu entendi:**
+
+Nessa última etapa, utilizamos os logs para observar o que estava acontecendo dentro do Nginx.
+
+Conseguimos identificar que o caminho `/` continuava respondendo com o código `200`, enquanto o caminho `/health` retornava o código `404`.
+
+Também encontramos uma mensagem informando que o arquivo `health` não foi encontrado.
+
+Isso confirmou o que observamos no passo anterior: o Nginx continuava funcionando, mas a verificação de prontidão estava falhando porque o arquivo havia sido removido.
+
+---
+
+## PASSO 9 – Excluindo o Namespace
+
+Depois de concluir os testes, realizamos a exclusão do namespace `aula8`.
+
+**Comando utilizado:**
+
+```bash
+kubectl delete namespace aula8
+```
+
+**Resultado:**
+
+```text
+namespace "aula8" deleted
+```
+
+**O que eu entendi:**
+
+Após finalizar a atividade, excluímos o namespace para remover os recursos utilizados durante a prática.
+
+---
+
+## PASSO 10 – Verificando a exclusão do Namespace
+
+Por último, tentamos consultar novamente o namespace:
+
+```bash
+kubectl get namespace aula8
+```
+
+**Resultado:**
+
+```text
+Error from server (NotFound): namespaces "aula8" not found
+```
+
+**O que eu entendi:**
+
+A mensagem apresentada era esperada, pois o namespace já havia sido excluído no passo anterior.
+
+Com isso, confirmamos que a limpeza do ambiente foi realizada.
+
+---
+
+## Conclusão
+
+Com essa atividade prática, consegui entender melhor como funcionam as verificações de saúde dentro do Kubernetes.
+
+Aprendi que a Liveness Probe acompanha se a aplicação continua funcionando, enquanto a Readiness Probe verifica se ela está pronta para receber acessos.
+
+O que mais me ajudou a entender o conteúdo foi criar o arquivo `health`, observar o Pod mudar para `1/1` e depois remover esse mesmo arquivo para ver o resultado mudar para `0/1`.
+
+Também aprendi a utilizar os comandos `describe`, `logs` e `get pod` para acompanhar o funcionamento do Pod e identificar o que estava acontecendo.
+
+Assim, consegui acompanhar na prática como o Kubernetes identifica quando uma aplicação está funcionando, mas ainda não está pronta para receber solicitações.
+
+**Atividade prática – Aula 08 | Computação em Nuvem**
