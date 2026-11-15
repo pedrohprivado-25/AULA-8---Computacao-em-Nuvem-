@@ -1,0 +1,27 @@
+# Desafios – Aula 08 | Verificações de Saúde no Kubernetes
+
+## 1. Comparação do experimento
+
+| Situação | Running? | READY? | RESTARTS? | Resultado / causa |
+|---|---|---|---|---|
+| Antes do arquivo `/health` | Sim | 0/1 | 0 | A Readiness Probe falhava porque o caminho `/health` retornava erro 404. |
+| Com o arquivo `/health` | Sim | 1/1 | 0 | O arquivo foi encontrado e respondeu `OK`. |
+| Após remover o arquivo | Sim | 0/1 | 0 | A Readiness Probe voltou a falhar porque o arquivo não existia mais. |
+
+## 2. Desafio: decisão de operação
+
+**1. Se a Liveness está boa e a Readiness falha, reiniciar ajuda neste caso?**
+
+Não. O Nginx continua funcionando normalmente. O problema está na falta do arquivo `/health`. Reiniciar o Pod não resolveria esse problema, pois o arquivo continuaria ausente.
+
+**2. Que risco existiria em enviar tráfego ao Pod enquanto `/health` responde 404?**
+
+O risco seria enviar acessos para uma aplicação que não está pronta para atender às solicitações. Isso poderia causar falhas ou respostas incorretas para os usuários.
+
+**3. Onde você olharia primeiro para investigar: get, describe ou logs? Por quê?**
+
+Eu começaria pelo comando `kubectl describe pod`, pois ele mostra os detalhes do Pod e os eventos relacionados às verificações de saúde. Depois, utilizaria `kubectl logs` para analisar os registros e entender melhor o problema.
+
+## 3. Justificativa
+
+Durante o experimento, percebi que o Pod continuou com o status `Running` e sem reinicializações, mesmo quando a Readiness Probe falhou. Isso aconteceu porque o Nginx continuava funcionando, mas não encontrava o arquivo `/health`. Ao criar o arquivo, o Pod ficou pronto (`1/1`), e ao removê-lo, voltou para `0/1`. Portanto, entendi que nem todo problema de prontidão precisa de uma reinicialização, sendo importante investigar a causa antes de tomar uma decisão.
